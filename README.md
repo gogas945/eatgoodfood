@@ -20,7 +20,15 @@ Telegram-бот для подсчёта КБЖУ и набора массы.
 
 > Никому не показывай токен и ключ и не отправляй их в чаты. Они хранятся только в файле `.env` на сервере.
 
-## Запуск
+## Быстрая установка на сервер (Ubuntu)
+
+```bash
+git clone https://github.com/gogas945/eatgoodfood.git /tmp/egf && sudo bash /tmp/egf/deploy/install.sh
+```
+
+Скрипт спросит токен бота, ключ Claude и твой Telegram ID (узнать у @userinfobot), установит всё и запустит бота как службу. Повторный запуск `sudo bash /opt/eatgoodfood/deploy/install.sh` обновляет бота.
+
+## Запуск вручную
 
 ```bash
 git clone https://github.com/gogas945/eatgoodfood.git
