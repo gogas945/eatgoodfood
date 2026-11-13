@@ -23,7 +23,7 @@ Telegram-бот для подсчёта КБЖУ и набора массы.
 ## Быстрая установка на сервер (Ubuntu)
 
 ```bash
-git clone https://github.com/gogas945/eatgoodfood.git /tmp/egf && sudo bash /tmp/egf/deploy/install.sh
+git clone -b claude/calorie-tracking-system-ggpgz1 https://github.com/gogas945/eatgoodfood.git /tmp/egf && sudo bash /tmp/egf/deploy/install.sh
 ```
 
 Скрипт спросит токен бота, ключ Claude и твой Telegram ID (узнать у @userinfobot), установит всё и запустит бота как службу. Повторный запуск `sudo bash /opt/eatgoodfood/deploy/install.sh` обновляет бота.
