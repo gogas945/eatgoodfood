@@ -33,22 +33,36 @@ def bar(value: float, norm: float, width: int = 10) -> str:
     return "▓" * filled + "░" * (width - filled) + f" {ratio * 100:.0f}%"
 
 
-def format_draft(data: dict) -> str:
+def items_lines(items: list[dict]) -> list[str]:
+    return [
+        f"• {escape(i['name'])} {fmt(i['grams'])} г: {fmt(i['kcal'])} ккал, "
+        f"Б {fmt(i['protein'])} / Ж {fmt(i['fat'])} / У {fmt(i['carbs'])}"
+        for i in items
+    ]
+
+
+def totals_line(t: dict, prefix: str = "Итого") -> str:
+    return (f"<b>{prefix}: {fmt(t['kcal'])} ккал</b>, Б {fmt(t['protein'])} / "
+            f"Ж {fmt(t['fat'])} / У {fmt(t['carbs'])}")
+
+
+def label_line(label: dict) -> str:
+    return (f"📋 Этикетка: <b>{escape(label['name'])}</b>, на 100 г: {fmt(label['kcal'])} ккал, "
+            f"Б {fmt(label['protein'])} / Ж {fmt(label['fat'])} / У {fmt(label['carbs'])}")
+
+
+def format_draft(data: dict, title: str = "🍽 <b>Разбор</b>") -> str:
     items = data["items"]
-    lines = ["🍽 <b>Разбор</b>"]
-    for i in items:
-        lines.append(
-            f"• {escape(i['name'])} {fmt(i['grams'])} г: {fmt(i['kcal'])} ккал, "
-            f"Б {fmt(i['protein'])} / Ж {fmt(i['fat'])} / У {fmt(i['carbs'])}"
-        )
-    t = sum_items(items)
-    lines.append(
-        f"\n<b>Итого: {fmt(t['kcal'])} ккал</b>, Б {fmt(t['protein'])} / "
-        f"Ж {fmt(t['fat'])} / У {fmt(t['carbs'])}"
-    )
+    lines = [title]
+    if items:
+        lines += items_lines(items)
+        lines.append("\n" + totals_line(sum_items(items)))
+    if data.get("label"):
+        lines.append("\n" + label_line(data["label"]))
     if data.get("comment"):
         lines.append(f"\n<i>{escape(data['comment'])}</i>")
-    lines.append("\nЧтобы поправить, ответь на это сообщение (например: «курица была 250 г»).")
+    if items:
+        lines.append("\nЧтобы поправить, ответь на это сообщение (например: «курица была 250 г»).")
     return "\n".join(lines)
 
 
@@ -94,7 +108,8 @@ def suggest_snacks(kcal_left: float, protein_left: float, limit: int = 3) -> lis
     return [f"{name} (~{kcal} ккал, Б {p} г)" for name, kcal, p in ranked[:limit]]
 
 
-def reminder_text(db: DB, day: date, slot: int, total_slots: int) -> str:
+def reminder_text(db: DB, day: date, slot: int, total_slots: int,
+                  suggestions: str | None = None) -> str:
     totals = db.day_totals(day)
     norms = db.norms()
     left = remaining(totals, norms)
@@ -106,8 +121,11 @@ def reminder_text(db: DB, day: date, slot: int, total_slots: int) -> str:
         f"({totals['kcal'] / norms['kcal'] * 100:.0f}%), белка {fmt(totals['protein'])} г.",
     ]
     if is_last and left["kcal"] > 50:
-        lines.append(f"\nДо нормы не хватает {fmt(left['kcal'])} ккал. Варианты:")
-        lines += [f"• {s}" for s in suggest_snacks(left["kcal"], left["protein"])]
+        if suggestions:
+            lines.append("\n" + suggestions)
+        else:
+            lines.append(f"\nДо нормы не хватает {fmt(left['kcal'])} ккал. Варианты:")
+            lines += [f"• {s}" for s in suggest_snacks(left["kcal"], left["protein"])]
     lines.append("\nНапиши, что съел, или нажми кнопку.")
     return "\n".join(lines)
 
@@ -192,3 +210,103 @@ def norm_advice(weekly_gain: float, kcal_adherence: float) -> str:
     if weekly_gain > 0.6:
         return "💡 Вес растёт быстрее 0,6 кг в неделю, часть может уходить в жир. Можно снизить норму на 100–150 ккал."
     return "💡 Темп набора хороший, норму оставляем."
+
+
+# ---------- мои блюда, продукты, холодильник ----------
+def dishes_text(dishes: list[dict]) -> str:
+    if not dishes:
+        return ("📖 <b>Мои блюда</b>\n\nПока пусто. Отправь, что ешь, как обычно "
+                "(например, «овсянка 80 г, молоко 250 мл, банан»), и под разбором нажми "
+                "<b>⭐ В мои блюда</b>.")
+    lines = ["📖 <b>Мои блюда</b>\n"]
+    for d in dishes:
+        t = d["totals"]
+        lines.append(f"• {escape(d['name'])}: {fmt(t['kcal'])} ккал, Б {fmt(t['protein'])}")
+    lines.append("\nНажми на блюдо, чтобы записать, изменить или удалить. "
+                 "Ещё можно просто написать боту его название.")
+    return "\n".join(lines)
+
+
+def dish_card(dish: dict) -> str:
+    lines = [f"⭐ <b>{escape(dish['name'])}</b> (1 порция)\n"]
+    lines += items_lines(dish["items"])
+    lines.append("\n" + totals_line(dish["totals"]))
+    return "\n".join(lines)
+
+
+def products_text(products: list[dict]) -> str:
+    if not products:
+        return ("🏷 <b>Мои продукты</b>\n\nПока пусто. Сфотографируй этикетку с таблицей "
+                "пищевой ценности и отправь боту: он предложит запомнить продукт. "
+                "Потом бот будет считать его по точным цифрам с упаковки.")
+    lines = ["🏷 <b>Мои продукты</b> (на 100 г)\n"]
+    for p in products:
+        fridge = " 🧊" if p["in_fridge"] else ""
+        lines.append(f"• {escape(p['name'])}{fridge}: {fmt(p['kcal'])} ккал, Б {fmt(p['protein'])} / "
+                     f"Ж {fmt(p['fat'])} / У {fmt(p['carbs'])}")
+    lines.append("\n🧊 — есть в холодильнике. Нажми ❌, чтобы удалить продукт.")
+    return "\n".join(lines)
+
+
+def fridge_text(items: list[dict]) -> str:
+    if not items:
+        return ("🧊 <b>Холодильник пуст</b>\n\nДобавь, что есть дома, через запятую:\n"
+                "<code>/fridge творог, бананы, арахисовая паста, молоко</code>\n\n"
+                "Тогда /dobor и вечернее напоминание будут предлагать, чем добрать норму, "
+                "из того, что у тебя уже куплено.")
+    lines = ["🧊 <b>В холодильнике</b>\n"]
+    lines += [f"• {escape(p['name'])}" for p in items]
+    lines.append("\nДобавить: <code>/fridge молоко, яйца</code>. "
+                 "Закончился продукт — нажми на него ниже.")
+    return "\n".join(lines)
+
+
+def suggestions_text(options: list[dict], left: dict) -> str:
+    lines = [f"💡 <b>Чем добрать</b>: осталось {fmt(left['kcal'])} ккал, "
+             f"белка {fmt(left['protein'])} г\n"]
+    for n, o in enumerate(options, 1):
+        t = sum_items(o["items"])
+        lines.append(f"<b>{n}. {escape(o['title'])}</b>: {fmt(t['kcal'])} ккал, Б {fmt(t['protein'])}")
+        lines += ["   " + line for line in items_lines(o["items"])]
+        if o.get("why"):
+            lines.append(f"   <i>{escape(o['why'])}</i>")
+        lines.append("")
+    lines.append("Съел один из вариантов? Нажми кнопку с его номером.")
+    return "\n".join(lines)
+
+
+# ---------- расходы на Claude ----------
+def money(v: float) -> str:
+    return f"${v:.2f}" if v >= 0.1 else f"{v * 100:.1f} ¢"
+
+
+def cost_report(db: DB, today: date) -> str:
+    day = db.usage_since(today.isoformat())
+    month = db.usage_since(today.replace(day=1).isoformat())
+    total = db.usage_since("0000")
+    lines = ["💰 <b>Расход на Claude</b> (оценка по токенам)\n",
+             f"Сегодня: {money(day['cost'])} ({day['n']} запр.)",
+             f"С начала месяца: {money(month['cost'])} ({month['n']} запр.)",
+             f"Всего: {money(total['cost'])} ({total['n']} запр.)"]
+    if total["n"]:
+        lines.append(f"В среднем за запрос: {money(total['cost'] / total['n'])}")
+    by_purpose = db.usage_by_purpose(today.replace(day=1).isoformat())
+    if by_purpose:
+        lines.append("\nЗа месяц по типам:")
+        lines += [f"• {escape(k)}: {money(v)}" for k, v in sorted(by_purpose.items(), key=lambda x: -x[1])]
+    bal = balance_left(db)
+    if bal is not None:
+        warn = " ⚠️ пора пополнить" if bal < 1 else ""
+        lines.append(f"\nОстаток баланса: <b>≈ ${bal:.2f}</b>{warn}")
+    else:
+        lines.append("\nЧтобы видеть остаток, укажи баланс из консоли Claude: <code>/cost 5</code>")
+    lines.append("Точные цифры: platform.claude.com → Usage.")
+    return "\n".join(lines)
+
+
+def balance_left(db: DB) -> float | None:
+    raw = db.get("balance_usd")
+    since = db.get("balance_set_at")
+    if not raw or not since:
+        return None
+    return float(raw) - db.usage_since(since)["cost"]
